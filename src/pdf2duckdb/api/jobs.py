@@ -10,9 +10,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from api.errors import ErrorInfo, classify_error
-from api.schemas import ErrorCategory, ErrorCode
-from src.pipeline import run_extraction_pipeline
+from pdf2duckdb.api.errors import ErrorInfo, classify_error
+from pdf2duckdb.api.schemas import ErrorCategory, ErrorCode
+from pdf2duckdb.pipeline import run_extraction_pipeline
 
 JOBS_ROOT = Path(os.getenv("API_JOBS_DIR", "output/jobs"))
 

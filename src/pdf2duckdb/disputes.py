@@ -8,7 +8,7 @@ from typing import Any
 
 import duckdb
 
-from src.chunker import TextChunk
+from pdf2duckdb.chunker import TextChunk
 
 RUN_METADATA_TABLE = "run_metadata"
 SOURCE_CHUNKS_TABLE = "source_chunks"

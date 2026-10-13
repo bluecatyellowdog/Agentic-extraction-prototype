@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pydantic_ai import Agent, ModelSettings
 
-from src.conflicts import ClaimRecord, ConflictGroup
-from src.config import Settings
-from src.schemas import WrapUpResult
+from pdf2duckdb.disputes import ClaimRecord, ConflictGroup
+from pdf2duckdb.config import Settings
+from pdf2duckdb.schemas import WrapUpResult
 
 WRAPUP_BATCH_SIZE = 30
 _WRAPUP_CHUNK_TEXT_LIMIT = 1500
@@ -90,7 +90,7 @@ async def reconcile_all_conflicts(
     settings: Settings,
 ) -> int:
     """Run wrap-up agent on all open disputes. Returns fields resolved."""
-    from src.conflicts import (
+    from pdf2duckdb.disputes import (
         apply_field_resolution,
         count_open_claims,
         count_open_disputes,

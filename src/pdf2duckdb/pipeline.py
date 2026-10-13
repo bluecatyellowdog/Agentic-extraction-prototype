@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.agents import DEFAULT_MAX_RETRIES, build_extraction_agent, extract_from_chunk
-from src.chunker import split_text_into_chunks
-from src.checkpoints import (
+from pdf2duckdb.agents import DEFAULT_MAX_RETRIES, build_extraction_agent, extract_from_chunk
+from pdf2duckdb.chunker import split_text_into_chunks
+from pdf2duckdb.checkpoints import (
     get_completed_chunk_indices,
     load_entity_keys,
     make_run_key,
     record_chunk_checkpoint,
 )
-from src.config import Settings, get_settings
-from src.database import (
+from pdf2duckdb.config import Settings, get_settings
+from pdf2duckdb.database import (
     prepare_database,
     insert_point_event_rows,
     print_table_preview,
@@ -21,22 +21,22 @@ from src.database import (
     sync_house_roster_from_characters,
     upsert_rows,
 )
-from src.pdf_reader import read_pdf_text
-from src.schemas import (
+from pdf2duckdb.pdf_reader import read_pdf_text
+from pdf2duckdb.schemas import (
     CHARACTER_DATABASE_PLAN,
     HOUSE_DATABASE_PLAN,
     HOUSE_POINT_EVENT_DATABASE_PLAN,
     SPELL_DATABASE_PLAN,
     DatabasePlan,
 )
-from src.conflicts import (
+from pdf2duckdb.disputes import (
     FACT_DISPUTES_TABLE,
     count_open_disputes,
     save_run_metadata,
     save_source_chunks,
 )
-from src.validation import ValidationSummary, validate_chunk_rows
-from src.wrapup import reconcile_all_conflicts
+from pdf2duckdb.validation import ValidationSummary, validate_chunk_rows
+from pdf2duckdb.wrapup import reconcile_all_conflicts
 
 
 async def run_extraction_pipeline(
@@ -280,7 +280,7 @@ async def run_extraction_pipeline(
             if open_count:
                 print(
                     f"  {open_count} open dispute(s) — review with: "
-                    f"python -m src.inspect --db {db_path} list"
+                    f"pdf2duckdb disputes --db {db_path} list"
                 )
         elif settings.openrouter_wrapup_model:
             print("\nStep 4/4: Reconciling fact conflicts...")
@@ -302,7 +302,7 @@ async def run_extraction_pipeline(
         print_table_preview(conn, spell_plan.table_name)
         print_table_preview(conn, house_plan.table_name)
         print_table_preview(conn, point_event_plan.table_name)
-        from src.checkpoints import table_exists
+        from pdf2duckdb.checkpoints import table_exists
 
         if table_exists(conn, FACT_DISPUTES_TABLE):
             print_table_preview(conn, FACT_DISPUTES_TABLE, limit=5)

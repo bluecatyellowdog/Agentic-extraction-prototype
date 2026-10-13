@@ -9,3 +9,8 @@ data/**/*.pdf
 debug-*.log
 *.log
 .DS_Store
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/

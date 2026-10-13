@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from api.errors import ErrorInfo, classify_error
-from api.jobs import create_job, get_job, job_to_status_dict, load_jobs_from_disk, run_job
-from api.schemas import ApiErrorResponse, ErrorCategory, ErrorCode, JobCreateResponse, JobStatusResponse
-from src.config import get_settings
+from pdf2duckdb.api.errors import ErrorInfo, classify_error
+from pdf2duckdb.api.jobs import create_job, get_job, job_to_status_dict, load_jobs_from_disk, run_job
+from pdf2duckdb.api.schemas import ApiErrorResponse, ErrorCategory, ErrorCode, JobCreateResponse, JobStatusResponse
+from pdf2duckdb.config import get_settings
 
 app = FastAPI(
     title="Agentic Extraction API",

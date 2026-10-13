@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic_ai.exceptions import ModelHTTPError
 
-from api.schemas import ErrorCategory, ErrorCode
+from pdf2duckdb.api.schemas import ErrorCategory, ErrorCode
 
 
 @dataclass(frozen=True)

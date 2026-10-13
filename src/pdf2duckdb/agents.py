@@ -16,8 +16,8 @@ from pydantic_ai.exceptions import (
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-from src.config import Settings
-from src.schemas import ChunkExtractionResult, DatabasePlan
+from pdf2duckdb.config import Settings
+from pdf2duckdb.schemas import ChunkExtractionResult, DatabasePlan
 
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_DELAY_SECONDS = 5.0

@@ -7,9 +7,9 @@ from typing import Any
 
 import duckdb
 
-from src.checkpoints import ensure_checkpoint_table, table_exists
-from src.conflicts import ensure_conflicts_table, log_scalar_conflicts
-from src.schemas import (
+from pdf2duckdb.checkpoints import ensure_checkpoint_table, table_exists
+from pdf2duckdb.disputes import ensure_conflicts_table, log_scalar_conflicts
+from pdf2duckdb.schemas import (
     HOGWARTS_HOUSE_NAMES,
     ColumnDefinition,
     DatabasePlan,

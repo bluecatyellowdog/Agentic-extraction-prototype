@@ -2,7 +2,7 @@
 CLI entry point for the PDF extraction pipeline.
 
 Example:
-  python main.py --pdf data/harrypotter-sample.pdf ^
+  pdf2duckdb --pdf data/harrypotter-sample.pdf ^
     --request "Extract human characters, named spells spoken in the text, Hogwarts house facts, and house point events" ^
     --output output/extracted.db
 """
@@ -14,7 +14,7 @@ import asyncio
 from dataclasses import replace
 from pathlib import Path
 
-from src.pipeline import run_extraction_pipeline
+from pdf2duckdb.pipeline import run_extraction_pipeline
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,10 +73,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def main() -> None:
+async def _run() -> None:
     args = parse_args()
 
-    from src.config import get_settings
+    from pdf2duckdb.config import get_settings
 
     settings = replace(
         get_settings(),
@@ -95,5 +95,9 @@ async def main() -> None:
     )
 
 
+def main() -> None:
+    asyncio.run(_run())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

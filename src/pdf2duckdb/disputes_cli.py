@@ -9,16 +9,16 @@ from pathlib import Path
 
 import duckdb
 
-from src.checkpoints import table_exists
-from src.conflicts import (
+from pdf2duckdb.checkpoints import table_exists
+from pdf2duckdb.disputes import (
     DISPUTE_STATUS_OPEN,
     FACT_CLAIMS_TABLE,
     FACT_DISPUTES_TABLE,
     SOURCE_CHUNKS_TABLE,
     apply_manual_resolution,
 )
-from src.database import sync_house_roster_from_characters
-from src.schemas import HOUSE_DATABASE_PLAN
+from pdf2duckdb.database import sync_house_roster_from_characters
+from pdf2duckdb.schemas import HOUSE_DATABASE_PLAN
 
 _CHUNK_PREVIEW_LIMIT = 2000
 
