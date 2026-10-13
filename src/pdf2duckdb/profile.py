@@ -34,8 +34,8 @@ class ColumnSpec(BaseModel):
     allowed_values: list[str] | None = Field(
         default=None,
         description=(
-            "Closed set of values. Matched case-insensitively (ignoring spaces, hyphens and "
-            "underscores) and stored in the spelling given here; anything else drops the row."
+            "Closed set of values. Matched case-insensitively (spaces, hyphens and underscores "
+            "are equivalent) and stored in the spelling given here; anything else drops the row."
         ),
     )
     merge: Literal["replace", "append"] = Field(
