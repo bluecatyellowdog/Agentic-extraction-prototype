@@ -8,6 +8,7 @@ import duckdb
 
 CHECKPOINT_TABLE = "pipeline_checkpoints"
 _DATA_TABLES = ("characters", "spells", "houses", "house_point_events")
+_RESUME_DATA_TABLES = ("characters", "spells", "house_point_events")
 
 
 def make_run_key(
@@ -55,6 +56,17 @@ def has_extraction_data(conn: duckdb.DuckDBPyConnection) -> bool:
     return False
 
 
+def has_resume_blocking_data(conn: duckdb.DuckDBPyConnection) -> bool:
+    """Rows that block --resume when no checkpoints exist (excludes seeded house rows)."""
+    for table_name in _RESUME_DATA_TABLES:
+        if not table_exists(conn, table_name):
+            continue
+        count = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
+        if count > 0:
+            return True
+    return False
+
+
 def get_completed_chunk_indices(conn: duckdb.DuckDBPyConnection, run_key: str) -> set[int]:
     """Return chunk indices already checkpointed for this run."""
     if not table_exists(conn, CHECKPOINT_TABLE):
@@ -67,7 +79,7 @@ def get_completed_chunk_indices(conn: duckdb.DuckDBPyConnection, run_key: str) -
         ).fetchall()
     }
     if not distinct_keys:
-        if has_extraction_data(conn):
+        if has_resume_blocking_data(conn):
             raise ValueError(
                 "Cannot --resume: the database has extracted rows but no checkpoints "
                 "(likely from a run before checkpointing existed). "
