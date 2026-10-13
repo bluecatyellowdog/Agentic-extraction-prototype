@@ -8,3 +8,8 @@ pymupdf>=1.24.0
 
 # Database
 duckdb>=1.0.0
+
+# HTTP API (optional — for `uvicorn api.main:app`)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9

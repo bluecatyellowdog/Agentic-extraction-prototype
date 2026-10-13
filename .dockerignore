@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+output/
+data/*.pdf
+*.db
+debug-*.log
+*.log
+.DS_Store

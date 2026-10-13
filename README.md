@@ -280,6 +280,97 @@ Validation is not ground-truth checking — use manual review and the dispute to
 python -c "import duckdb; c=duckdb.connect('output/extracted.db'); print(c.sql('SHOW TABLES').fetchall()); print(c.sql('SELECT * FROM characters LIMIT 5').fetchdf())"
 ```
 
+## HTTP API (local)
+
+Run the same pipeline over HTTP with a background job per upload:
+
+```powershell
+pip install -r requirements.txt
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Open **http://127.0.0.1:8000/docs** to try endpoints in the browser.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness check |
+| `POST` | `/jobs` | Upload PDF + extraction request → `job_id` |
+| `GET` | `/jobs/{job_id}` | Job status (`queued`, `running`, `completed`, `failed`) |
+| `GET` | `/jobs/{job_id}/db` | Download DuckDB when completed |
+
+Each job writes files under `output/jobs/{job_id}/` (`input.pdf`, `extracted.db`, `meta.json`).
+
+### Example (PowerShell)
+
+```powershell
+# Start a job (use a small PDF first)
+curl.exe -X POST http://127.0.0.1:8000/jobs `
+  -F "pdf=@data/gold/gold-scene.pdf" `
+  -F "request=Extract human characters, named spells spoken in the text, Hogwarts house facts, and house point events"
+
+# Poll status (replace JOB_ID)
+curl.exe http://127.0.0.1:8000/jobs/JOB_ID
+
+# Download database when status is completed
+curl.exe -O -J http://127.0.0.1:8000/jobs/JOB_ID/db
+```
+
+Requires the same `.env` as the CLI (`OPENROUTER_API_KEY`, etc.). Long books still take many minutes — poll `/jobs/{job_id}` until `completed`.
+
+### Reading failures in Swagger
+
+When `status` is **`failed`**, **GET /jobs/{job_id}** includes structured fields (also saved in `meta.json`):
+
+| Field | Use it to… |
+|-------|------------|
+| **`error_code`** | Stable id, e.g. `missing_api_key`, `openrouter_unauthorized`, `upstream_error` |
+| **`error_category`** | Bucket: `configuration`, `auth`, `billing`, `provider`, `network`, … |
+| **`hint`** | Suggested fix in plain English |
+| **`retryable`** | `true` = safe to retry; `false` = fix config/key first |
+| **`phase`** | Where it died: `startup`, `database_setup`, `chunk_extraction`, … |
+| **`http_status`** | OpenRouter HTTP code when applicable (401, 402, 502, …) |
+
+**POST /jobs** rejects bad config immediately (**400**) with the same shape if e.g. `OPENROUTER_API_KEY` is missing — before a job is created.
+
+Leave **`resume` unchecked** for new jobs. The resume/checkpoint false-positive on seeded house rows is fixed in `src/checkpoints.py`.
+
+## Docker
+
+Run the HTTP API in a container (same endpoints as local uvicorn). Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+1. Copy `.env.example` to `.env` and add your OpenRouter key (never commit `.env`).
+2. From the project root:
+
+```powershell
+docker compose up --build
+```
+
+3. Open **http://127.0.0.1:8000/docs** — upload a PDF via **POST /jobs**, poll **GET /jobs/{job_id}**.
+
+Job files are stored in a Docker volume (`job-data` → `/data/jobs` inside the container), not in your local `output/jobs/` folder.
+
+```powershell
+# Detached (background)
+docker compose up -d --build
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+If port 8000 is busy on the host, change `ports` in `docker-compose.yml` to e.g. `"8001:8000"` and use http://127.0.0.1:8001/docs.
+
+**Without Compose** (build + run):
+
+```powershell
+docker build -t agentic-extraction .
+docker run --rm -p 8000:8000 --env-file .env -e API_JOBS_DIR=/data/jobs -v agentic-jobs:/data/jobs agentic-extraction
+```
+
+The image runs **uvicorn** only. For CLI extraction inside the container, mount your PDF and override the command, or use the API upload.
+
 ## Cost and runtime
 
 Long books mean hundreds of **sequential** API calls. Runtime depends heavily on model speed:
