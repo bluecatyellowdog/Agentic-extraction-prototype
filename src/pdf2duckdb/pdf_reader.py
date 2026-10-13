@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 
 
 def read_pdf_text(pdf_path: Path) -> str:
@@ -17,7 +17,7 @@ def read_pdf_text(pdf_path: Path) -> str:
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
     pages: list[str] = []
-    with fitz.open(pdf_path) as document:
+    with pymupdf.open(pdf_path) as document:
         for page in document:
             pages.append(page.get_text("text"))
 

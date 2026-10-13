@@ -39,23 +39,17 @@ class Settings:
 def get_settings() -> Settings:
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
-        raise ValueError(
-            "Missing OPENROUTER_API_KEY. Copy .env.example to .env and add your key."
-        )
+        raise ValueError("Missing OPENROUTER_API_KEY. Copy .env.example to .env and add your key.")
 
-    model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001").strip()
+    model = os.getenv("OPENROUTER_MODEL", "google/gemini-3.5-flash").strip()
 
     temperature_raw = os.getenv("OPENROUTER_TEMPERATURE", "0.1").strip()
     try:
         temperature = float(temperature_raw)
     except ValueError as e:
-        raise ValueError(
-            f"OPENROUTER_TEMPERATURE must be a number, got {temperature_raw!r}"
-        ) from e
+        raise ValueError(f"OPENROUTER_TEMPERATURE must be a number, got {temperature_raw!r}") from e
     if not 0.0 <= temperature <= 2.0:
-        raise ValueError(
-            f"OPENROUTER_TEMPERATURE must be between 0.0 and 2.0, got {temperature}"
-        )
+        raise ValueError(f"OPENROUTER_TEMPERATURE must be between 0.0 and 2.0, got {temperature}")
 
     wrapup_model = os.getenv("OPENROUTER_WRAPUP_MODEL", "").strip() or None
 

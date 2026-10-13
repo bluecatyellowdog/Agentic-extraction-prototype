@@ -1,0 +1,86 @@
+name: novel
+description: People, places, organisations and key events in a work of narrative fiction.
+
+instructions:
+  - Only extract what this chunk states or clearly implies. Do not use outside knowledge of the book.
+  - Use the fullest form of a name that appears in the text (e.g. "Elizabeth Bennet", not "Lizzy").
+
+tables:
+  - name: characters
+    description: One row per named person who appears in or is discussed in the text.
+    key: name
+    instructions:
+      - Only people. Skip animals, objects and unnamed figures ("the coachman").
+      - Put nicknames, titles and alternative spellings in aliases, not as separate rows.
+    columns:
+      - name: name
+        description: Full canonical name of the person.
+        required: true
+        grounding: any_token
+      - name: aliases
+        description: Other names, nicknames or titles used for this person.
+        merge: append
+      - name: gender
+        description: Gender if the text makes it clear.
+        allowed_values: [female, male, other]
+        track_conflicts: true
+      - name: occupation
+        description: Job, profession or social position, if stated.
+        track_conflicts: true
+      - name: affiliations
+        description: Families, households, organisations or groups this person belongs to.
+        merge: append
+      - name: relationships
+        description: >-
+          Relationships to other named characters, each written as "<relation> of <full name>"
+          (e.g. "sister of Jane Bennet").
+        merge: append
+        separator: "; "
+      - name: description
+        description: One or two sentences on personality, appearance or behaviour as shown in this chunk.
+        merge: append
+        separator: "; "
+
+  - name: locations
+    description: One row per named place (city, building, estate, country, room, ...).
+    key: name
+    columns:
+      - name: name
+        description: Name of the place as written in the text.
+        required: true
+        grounding: exact
+      - name: location_type
+        description: What kind of place it is (e.g. city, house, street, country).
+      - name: description
+        description: Short description of the place from this chunk.
+        merge: append
+        separator: "; "
+
+  - name: organisations
+    description: One row per named organisation, institution, company, regiment, club or similar group.
+    key: name
+    columns:
+      - name: name
+        description: Name of the organisation as written in the text.
+        required: true
+        grounding: exact
+      - name: organisation_type
+        description: What kind of organisation it is.
+      - name: members
+        description: Named characters who belong to it.
+        merge: append
+
+  - name: events
+    description: >-
+      One row per significant plot event in this chunk: arrivals, departures, meetings,
+      revelations, crimes, deaths, marriages, decisions. Skip routine actions.
+    instructions:
+      - Prefer a handful of meaningful events over a list of every action.
+    columns:
+      - name: summary
+        description: One sentence describing what happens.
+        required: true
+      - name: participants
+        description: Full names of the characters involved, comma-separated.
+      - name: location
+        description: Where it happens, if stated.

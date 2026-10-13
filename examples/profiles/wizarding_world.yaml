@@ -1,0 +1,101 @@
+# Example profile for a fantasy boarding-school novel. It shows the more specific
+# features: closed value sets, seeded rows, a blocklist and an append-only event log.
+name: wizarding_world
+description: Characters, spells, school houses and house point events in a wizarding-school novel.
+
+instructions:
+  - Only extract what this chunk states. Do not use outside knowledge of the series.
+  - Do not invent characters, spells or facts.
+
+tables:
+  - name: characters
+    description: One row per human character mentioned in the chunk.
+    key: character_name
+    instructions:
+      - Only humans (wizards, witches, muggles). Exclude house-elves, goblins, ghosts, portraits, centaurs, giants and animals.
+      - Only fill classes_attended for students.
+    blocklist: [Dobby, Kreacher, Hedwig, Fang, Norbert, Fluffy, Nearly Headless Nick, Peeves, Firenze]
+    columns:
+      - name: character_name
+        description: Full canonical name of the human character.
+        required: true
+        grounding: any_token
+      - name: blood_status
+        description: Blood status if stated.
+        allowed_values: [muggle, half_blood, wizard]
+        track_conflicts: true
+      - name: house
+        description: School house the character belongs to, if stated.
+        allowed_values: [Gryffindor, Hufflepuff, Ravenclaw, Slytherin]
+        track_conflicts: true
+      - name: role_type
+        description: student for pupils, faculty for teachers and staff at the school.
+        allowed_values: [student, faculty]
+        track_conflicts: true
+      - name: classes_attended
+        description: Classes or subjects this student attends or is seen in.
+        merge: append
+      - name: occupation
+        description: Job or profession; for faculty, the subject taught.
+        track_conflicts: true
+      - name: character_description
+        description: One or two sentences on personality and behaviour.
+        merge: append
+        separator: "; "
+
+  - name: spells
+    description: One row per spell whose incantation is spoken, shouted or quoted in the text.
+    key: spell_name
+    instructions:
+      - spell_name is the exact incantation in title case, without exclamation marks.
+    columns:
+      - name: spell_name
+        description: Exact incantation as spoken in the text.
+        required: true
+        grounding: exact
+      - name: effect_description
+        description: What the spell does, based only on this text.
+        merge: append
+        separator: "; "
+      - name: used_by
+        description: Full names of the characters who cast it.
+        merge: append
+
+  - name: houses
+    description: One row per school house with roster and lore facts from this chunk.
+    key: house_name
+    seed_keys: [Gryffindor, Hufflepuff, Ravenclaw, Slytherin]
+    instructions:
+      - Do not put house point awards or deductions in lore_facts; they belong in house_point_events.
+    columns:
+      - name: house_name
+        description: Name of the house.
+        required: true
+        allowed_values: [Gryffindor, Hufflepuff, Ravenclaw, Slytherin]
+      - name: current_students
+        description: Full names of current students in this house.
+        merge: append
+      - name: prior_students
+        description: Full names of former students or alumni of this house.
+        merge: append
+      - name: lore_facts
+        description: House traits, common room, decorations, founder notes.
+        merge: append
+        separator: "; "
+
+  - name: house_point_events
+    description: One row per explicit house point award or deduction.
+    columns:
+      - name: house_name
+        description: House that gained or lost points.
+        required: true
+        allowed_values: [Gryffindor, Hufflepuff, Ravenclaw, Slytherin]
+      - name: points
+        type: INTEGER
+        description: Positive when awarded, negative when deducted (e.g. 10 or -5). Never zero.
+        required: true
+      - name: caused_by_student
+        description: Full name of the student who caused the change, if stated.
+      - name: reason
+        description: Why the points changed.
+        required: true

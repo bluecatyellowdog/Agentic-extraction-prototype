@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import logging
+
+import duckdb
 from pydantic_ai import Agent, ModelSettings
 
-from pdf2duckdb.disputes import ClaimRecord, ConflictGroup
 from pdf2duckdb.config import Settings
+from pdf2duckdb.disputes import (
+    ClaimRecord,
+    ConflictGroup,
+    apply_field_resolution,
+    count_open_claims,
+    count_open_disputes,
+    fetch_unresolved_conflict_groups,
+)
 from pdf2duckdb.schemas import WrapUpResult
+
+logger = logging.getLogger(__name__)
 
 WRAPUP_BATCH_SIZE = 30
 _WRAPUP_CHUNK_TEXT_LIMIT = 1500
@@ -22,14 +34,15 @@ def build_wrap_up_agent(settings: Settings) -> Agent[None, WrapUpResult]:
         output_type=WrapUpResult,
         model_settings=ModelSettings(temperature=settings.openrouter_wrapup_temperature),
         system_prompt=(
-            "You reconcile contradictory facts extracted from a novel across many text chunks.\n\n"
+            "You reconcile contradictory facts extracted from one document "
+            "across many text chunks.\n\n"
             "For each disputed field you receive:\n"
             "- table_name, entity_key, field_name\n"
             "- current_value (what the database holds after all merges)\n"
-            "- a timeline of claims ordered by chunk_index (higher = later in the book)\n"
+            "- a timeline of claims ordered by chunk_index (higher = later in the document)\n"
             "- the source chunk text for each claim\n\n"
             "Rules:\n"
-            "- Prefer later chunk_index when the narrative supports a reveal or correction.\n"
+            "- Prefer later chunk_index when the text supports an update, reveal or correction.\n"
             "- Prefer earlier well-supported facts when later claims look like extraction errors.\n"
             "- Use null for canonical_value only if no claim is credible.\n"
             "- Return exactly one resolution per dispute listed in the prompt.\n"
@@ -47,7 +60,8 @@ def _truncate_chunk_text(text: str, limit: int = _WRAPUP_CHUNK_TEXT_LIMIT) -> st
 
 def _format_claim(claim: ClaimRecord) -> list[str]:
     lines = [
-        f"  chunk {claim.chunk_index}: was {claim.previous_value!r} -> claimed {claim.incoming_value!r}"
+        f"  chunk {claim.chunk_index}: "
+        f"was {claim.previous_value!r} -> claimed {claim.incoming_value!r}"
     ]
     if claim.word_start is not None and claim.word_end is not None:
         lines.append(f"    (words {claim.word_start}-{claim.word_end})")
@@ -86,27 +100,22 @@ async def run_wrap_up_batch(
 
 
 async def reconcile_all_conflicts(
-    conn,
+    conn: duckdb.DuckDBPyConnection,
     settings: Settings,
 ) -> int:
     """Run wrap-up agent on all open disputes. Returns fields resolved."""
-    from pdf2duckdb.disputes import (
-        apply_field_resolution,
-        count_open_claims,
-        count_open_disputes,
-        fetch_unresolved_conflict_groups,
-    )
-
     dispute_count = count_open_disputes(conn)
     if dispute_count == 0:
-        print("Wrap-up: no open fact disputes")
+        logger.info("Wrap-up: no open fact disputes")
         return 0
 
     claim_count = count_open_claims(conn)
     groups = fetch_unresolved_conflict_groups(conn)
-    print(
-        f"Wrap-up: reconciling {dispute_count} open dispute(s) "
-        f"({claim_count} claim(s)) using {settings.openrouter_wrapup_model}..."
+    logger.info(
+        "Wrap-up: reconciling %d open dispute(s) (%d claim(s)) using %s",
+        dispute_count,
+        claim_count,
+        settings.openrouter_wrapup_model,
     )
 
     wrap_up_agent = build_wrap_up_agent(settings)
@@ -114,9 +123,7 @@ async def reconcile_all_conflicts(
 
     for start in range(0, len(groups), WRAPUP_BATCH_SIZE):
         batch = groups[start : start + WRAPUP_BATCH_SIZE]
-        batch_keys = {
-            (g.table_name, g.entity_key, g.field_name) for g in batch
-        }
+        batch_keys = {(g.table_name, g.entity_key, g.field_name) for g in batch}
         result = await run_wrap_up_batch(wrap_up_agent, batch)
 
         for resolution in result.resolutions:
@@ -136,11 +143,13 @@ async def reconcile_all_conflicts(
                 reason=resolution.reason,
             )
             applied += 1
-            print(
-                f"  Resolved {resolution.entity_key}.{resolution.field_name} "
-                f"-> {resolution.canonical_value!r}"
+            logger.info(
+                "  Resolved %s.%s -> %r",
+                resolution.entity_key,
+                resolution.field_name,
+                resolution.canonical_value,
             )
 
     remaining = count_open_disputes(conn)
-    print(f"Wrap-up done: {applied} dispute(s) resolved, {remaining} still open")
+    logger.info("Wrap-up done: %d dispute(s) resolved, %d still open", applied, remaining)
     return applied

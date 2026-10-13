@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     queued = "queued"
     running = "running"
     completed = "completed"
     failed = "failed"
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     """Stable machine-readable failure id (shown in Swagger on failed jobs)."""
 
     MISSING_API_KEY = "missing_api_key"
@@ -35,7 +35,7 @@ class ErrorCode(str, Enum):
     UNKNOWN = "unknown"
 
 
-class ErrorCategory(str, Enum):
+class ErrorCategory(StrEnum):
     """High-level bucket so you can tell config vs auth vs provider issues."""
 
     configuration = "configuration"

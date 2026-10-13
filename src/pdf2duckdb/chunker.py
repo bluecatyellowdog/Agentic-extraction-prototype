@@ -17,7 +17,10 @@ class TextChunk:
 
     @property
     def label(self) -> str:
-        return f"chunk {self.index + 1} (words {self.word_start}-{self.word_end} of {self.total_words})"
+        return (
+            f"chunk {self.index + 1} "
+            f"(words {self.word_start}-{self.word_end} of {self.total_words})"
+        )
 
 
 def split_text_into_chunks(
@@ -49,22 +52,18 @@ def split_text_into_chunks(
 
     step = chunk_size_words - overlap_words
     chunks: list[TextChunk] = []
-    chunk_index = 0
 
-    for start in range(0, total, step):
+    for chunk_index, start in enumerate(range(0, total, step)):
         end = min(start + chunk_size_words, total)
-        chunk_words = words[start:end]
         chunks.append(
             TextChunk(
                 index=chunk_index,
-                text=" ".join(chunk_words),
+                text=" ".join(words[start:end]),
                 word_start=start,
                 word_end=end,
                 total_words=total,
             )
         )
-        chunk_index += 1
-
         if end >= total:
             break
 

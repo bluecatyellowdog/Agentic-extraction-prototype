@@ -6,19 +6,21 @@ from pathlib import Path
 
 import duckdb
 
+from pdf2duckdb.dbutil import count_rows, table_exists
+from pdf2duckdb.profile import ExtractionProfile
+
 CHECKPOINT_TABLE = "pipeline_checkpoints"
-_DATA_TABLES = ("characters", "spells", "houses", "house_point_events")
-_RESUME_DATA_TABLES = ("characters", "spells", "house_point_events")
 
 
 def make_run_key(
     pdf_path: Path,
     *,
+    profile_name: str,
     chunk_size_words: int,
     chunk_overlap_words: int,
 ) -> str:
-    """Stable id for a PDF + chunking configuration."""
-    return f"{pdf_path.resolve()}|{chunk_size_words}|{chunk_overlap_words}"
+    """Stable id for a PDF + profile + chunking configuration."""
+    return f"{pdf_path.resolve()}|{profile_name}|{chunk_size_words}|{chunk_overlap_words}"
 
 
 def ensure_checkpoint_table(conn: duckdb.DuckDBPyConnection) -> None:
@@ -34,55 +36,31 @@ def ensure_checkpoint_table(conn: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def table_exists(conn: duckdb.DuckDBPyConnection, table_name: str) -> bool:
-    row = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = ?
-        """,
-        [table_name],
-    ).fetchone()
-    return bool(row and row[0] > 0)
-
-
-def has_extraction_data(conn: duckdb.DuckDBPyConnection) -> bool:
-    for table_name in _DATA_TABLES:
-        if not table_exists(conn, table_name):
-            continue
-        count = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
-        if count > 0:
+def has_extracted_rows(conn: duckdb.DuckDBPyConnection, profile: ExtractionProfile) -> bool:
+    """True if any profile table holds rows beyond its seeded ones."""
+    for table in profile.tables:
+        if table_exists(conn, table.name) and count_rows(conn, table.name) > len(table.seed_keys):
             return True
     return False
 
 
-def has_resume_blocking_data(conn: duckdb.DuckDBPyConnection) -> bool:
-    """Rows that block --resume when no checkpoints exist (excludes seeded house rows)."""
-    for table_name in _RESUME_DATA_TABLES:
-        if not table_exists(conn, table_name):
-            continue
-        count = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
-        if count > 0:
-            return True
-    return False
-
-
-def get_completed_chunk_indices(conn: duckdb.DuckDBPyConnection, run_key: str) -> set[int]:
+def get_completed_chunk_indices(
+    conn: duckdb.DuckDBPyConnection,
+    run_key: str,
+    profile: ExtractionProfile,
+) -> set[int]:
     """Return chunk indices already checkpointed for this run."""
     if not table_exists(conn, CHECKPOINT_TABLE):
         return set()
 
     distinct_keys = {
         row[0]
-        for row in conn.execute(
-            f'SELECT DISTINCT "run_key" FROM "{CHECKPOINT_TABLE}"'
-        ).fetchall()
+        for row in conn.execute(f'SELECT DISTINCT "run_key" FROM "{CHECKPOINT_TABLE}"').fetchall()
     }
     if not distinct_keys:
-        if has_resume_blocking_data(conn):
+        if has_extracted_rows(conn, profile):
             raise ValueError(
-                "Cannot --resume: the database has extracted rows but no checkpoints "
-                "(likely from a run before checkpointing existed). "
+                "Cannot --resume: the database has extracted rows but no checkpoints. "
                 "Use a new --output path or re-run without --resume to start fresh."
             )
         return set()
@@ -109,7 +87,7 @@ def record_chunk_checkpoint(
     run_key: str,
     chunk_index: int,
 ) -> None:
-    """Mark a chunk as fully written (call only after successful DB upsert/insert)."""
+    """Mark a chunk as fully written (call only after successful DB writes)."""
     conn.execute(
         f"""
         INSERT OR REPLACE INTO "{CHECKPOINT_TABLE}"
@@ -120,8 +98,10 @@ def record_chunk_checkpoint(
     )
 
 
-def load_entity_keys(conn: duckdb.DuckDBPyConnection, table_name: str, key_column: str) -> list[str]:
-    """Load unique keys from a table for resume (known entities in prompts)."""
+def load_entity_keys(
+    conn: duckdb.DuckDBPyConnection, table_name: str, key_column: str
+) -> list[str]:
+    """Load existing keys from a table (used to list known entities in prompts)."""
     if not table_exists(conn, table_name):
         return []
     rows = conn.execute(

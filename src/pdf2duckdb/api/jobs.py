@@ -6,7 +6,7 @@ import json
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,12 +22,11 @@ class Job:
     id: str
     status: str = "queued"
     message: str = ""
-    user_request: str = ""
+    profile: str = "novel"
+    user_request: str | None = None
     resume: bool = False
     skip_wrap_up: bool = False
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     pdf_path: Path | None = None
     db_path: Path | None = None
     error_code: str | None = None
@@ -60,7 +59,7 @@ class Job:
         self.phase = info.phase
         self.hint = info.hint
         self.http_status = info.http_status
-        self.failed_at = datetime.now(timezone.utc).isoformat()
+        self.failed_at = datetime.now(UTC).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -76,10 +75,11 @@ class Job:
             id=data["id"],
             status=data.get("status", "queued"),
             message=data.get("message", ""),
-            user_request=data.get("user_request", ""),
+            profile=data.get("profile", "novel"),
+            user_request=data.get("user_request"),
             resume=bool(data.get("resume", False)),
             skip_wrap_up=bool(data.get("skip_wrap_up", False)),
-            created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
+            created_at=data.get("created_at", datetime.now(UTC).isoformat()),
             pdf_path=Path(pdf_path) if pdf_path else None,
             db_path=Path(db_path) if db_path else None,
             error_code=data.get("error_code"),
@@ -136,7 +136,8 @@ def load_jobs_from_disk() -> None:
                         phase="interrupted",
                         hint=(
                             "Start a new POST /jobs (resume=false), or resume via CLI: "
-                            f"python main.py --pdf ... --output {job.db_path} --resume"
+                            f"pdf2duckdb extract --pdf ... --profile {job.profile} "
+                            f"--output {job.db_path} --resume"
                         ),
                     )
                 )
@@ -152,7 +153,8 @@ def get_job(job_id: str) -> Job | None:
 
 def create_job(
     *,
-    user_request: str,
+    profile: str,
+    user_request: str | None,
     resume: bool = False,
     skip_wrap_up: bool = False,
 ) -> Job:
@@ -162,6 +164,7 @@ def create_job(
 
     job = Job(
         id=job_id,
+        profile=profile,
         user_request=user_request,
         resume=resume,
         skip_wrap_up=skip_wrap_up,
@@ -198,14 +201,15 @@ async def run_job(job: Job) -> None:
     save_job(job)
 
     try:
-        db_path = await run_extraction_pipeline(
+        result = await run_extraction_pipeline(
             pdf_path=job.pdf_path,
+            profile=job.profile,
             user_request=job.user_request,
             db_path=job.db_path,
             resume=job.resume,
             skip_wrap_up=job.skip_wrap_up,
         )
-        job.db_path = db_path
+        job.db_path = result.db_path
         job.status = "completed"
         job.message = "Extraction finished successfully"
         job.clear_error()

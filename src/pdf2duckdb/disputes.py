@@ -9,6 +9,7 @@ from typing import Any
 import duckdb
 
 from pdf2duckdb.chunker import TextChunk
+from pdf2duckdb.dbutil import primary_key_column, table_exists
 
 RUN_METADATA_TABLE = "run_metadata"
 SOURCE_CHUNKS_TABLE = "source_chunks"
@@ -19,11 +20,6 @@ DISPUTE_STATUS_OPEN = "open"
 DISPUTE_STATUS_RESOLVED_WRAPUP = "resolved_wrapup"
 DISPUTE_STATUS_RESOLVED_MANUAL = "resolved_manual"
 
-# Scalar fields where a changed non-empty value is a contradiction (not list merges).
-CONFLICT_TRACKED_FIELDS: dict[str, frozenset[str]] = {
-    "characters": frozenset({"blood_status", "house", "role_type", "occupation"}),
-}
-
 
 def ensure_dispute_schema(conn: duckdb.DuckDBPyConnection) -> None:
     """Create run metadata, source chunks, disputes, and claims tables."""
@@ -32,6 +28,7 @@ def ensure_dispute_schema(conn: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE IF NOT EXISTS "{RUN_METADATA_TABLE}" (
             "run_key" VARCHAR PRIMARY KEY,
             "pdf_path" VARCHAR NOT NULL,
+            "profile" VARCHAR,
             "chunk_size_words" INTEGER NOT NULL,
             "chunk_overlap_words" INTEGER NOT NULL,
             "created_at" TIMESTAMP DEFAULT current_timestamp
@@ -78,20 +75,16 @@ def ensure_dispute_schema(conn: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def ensure_conflicts_table(conn: duckdb.DuckDBPyConnection) -> None:
-    """Backward-compatible alias for schema setup."""
-    ensure_dispute_schema(conn)
-
-
 def save_run_metadata(
     conn: duckdb.DuckDBPyConnection,
     *,
     run_key: str,
     pdf_path: Path,
+    profile_name: str,
     chunk_size_words: int,
     chunk_overlap_words: int,
 ) -> None:
-    """Record PDF path and chunk settings once per run (skip if already stored)."""
+    """Record PDF path, profile and chunk settings once per run (skip if already stored)."""
     existing = conn.execute(
         f'SELECT COUNT(*) FROM "{RUN_METADATA_TABLE}" WHERE "run_key" = ?',
         [run_key],
@@ -101,15 +94,15 @@ def save_run_metadata(
     conn.execute(
         f"""
         INSERT INTO "{RUN_METADATA_TABLE}"
-        ("run_key", "pdf_path", "chunk_size_words", "chunk_overlap_words")
-        VALUES (?, ?, ?, ?)
+        ("run_key", "pdf_path", "profile", "chunk_size_words", "chunk_overlap_words")
+        VALUES (?, ?, ?, ?, ?)
         """,
-        [run_key, str(pdf_path.resolve()), chunk_size_words, chunk_overlap_words],
+        [run_key, str(pdf_path.resolve()), profile_name, chunk_size_words, chunk_overlap_words],
     )
 
 
 def source_chunks_populated(conn: duckdb.DuckDBPyConnection) -> bool:
-    if not _table_exists(conn, SOURCE_CHUNKS_TABLE):
+    if not table_exists(conn, SOURCE_CHUNKS_TABLE):
         return False
     count = conn.execute(f'SELECT COUNT(*) FROM "{SOURCE_CHUNKS_TABLE}"').fetchone()[0]
     return count > 0
@@ -143,9 +136,7 @@ def _normalize(value: Any) -> str:
 
 def _next_id(conn: duckdb.DuckDBPyConnection, table: str, column: str) -> int:
     return int(
-        conn.execute(
-            f'SELECT COALESCE(MAX("{column}"), 0) + 1 FROM "{table}"'
-        ).fetchone()[0]
+        conn.execute(f'SELECT COALESCE(MAX("{column}"), 0) + 1 FROM "{table}"').fetchone()[0]
     )
 
 
@@ -229,16 +220,13 @@ def log_scalar_conflicts(
     *,
     table_name: str,
     entity_key: str,
+    tracked_fields: list[str],
     existing: dict[str, Any] | None,
     incoming: dict[str, Any],
     chunk_index: int,
 ) -> None:
     """Record contradictions for tracked scalar fields before merge."""
-    tracked = CONFLICT_TRACKED_FIELDS.get(table_name)
-    if not tracked:
-        return
-
-    for field_name in tracked:
+    for field_name in tracked_fields:
         previous_value = existing.get(field_name) if existing else None
         incoming_value = incoming.get(field_name)
         if _is_empty(previous_value) or _is_empty(incoming_value):
@@ -316,7 +304,7 @@ def fetch_unresolved_conflict_groups(conn: duckdb.DuckDBPyConnection) -> list[Co
 
         current_row = conn.execute(
             f'SELECT "{field_name}" FROM "{table_name}" WHERE '
-            f'"{_unique_key_for_table(table_name)}" = ?',
+            f'"{primary_key_column(conn, table_name)}" = ?',
             [entity_key],
         ).fetchone()
         current_value = None if current_row is None else current_row[0]
@@ -336,16 +324,6 @@ def fetch_unresolved_conflict_groups(conn: duckdb.DuckDBPyConnection) -> list[Co
     return groups
 
 
-def _unique_key_for_table(table_name: str) -> str:
-    if table_name == "characters":
-        return "character_name"
-    if table_name == "spells":
-        return "spell_name"
-    if table_name == "houses":
-        return "house_name"
-    raise ValueError(f"No unique key mapping for table {table_name!r}")
-
-
 def apply_field_resolution(
     conn: duckdb.DuckDBPyConnection,
     *,
@@ -356,7 +334,7 @@ def apply_field_resolution(
     reason: str,
     status: str = DISPUTE_STATUS_RESOLVED_WRAPUP,
 ) -> None:
-    unique_key = _unique_key_for_table(table_name)
+    unique_key = primary_key_column(conn, table_name)
     conn.execute(
         f'UPDATE "{table_name}" SET "{field_name}" = ? WHERE "{unique_key}" = ?',
         [canonical_value, entity_key],
@@ -381,6 +359,38 @@ def apply_field_resolution(
     )
 
 
+def find_dispute_table(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    entity_key: str,
+    field_name: str,
+    table_name: str | None = None,
+    open_only: bool = False,
+) -> str | None:
+    """Return the table of the dispute on entity.field, or None if there is none.
+
+    Raises ValueError when table_name is omitted and several tables match.
+    """
+    query = f"""
+        SELECT DISTINCT "table_name" FROM "{FACT_DISPUTES_TABLE}"
+        WHERE "entity_key" = ? AND "field_name" = ?
+    """
+    params: list[Any] = [entity_key, field_name]
+    if table_name is not None:
+        query += ' AND "table_name" = ?'
+        params.append(table_name)
+    if open_only:
+        query += ' AND "status" = ?'
+        params.append(DISPUTE_STATUS_OPEN)
+    tables = [row[0] for row in conn.execute(query, params).fetchall()]
+    if len(tables) > 1:
+        raise ValueError(
+            f"{entity_key}.{field_name} is disputed in several tables ({', '.join(tables)}); "
+            "pass --table"
+        )
+    return tables[0] if tables else None
+
+
 def apply_manual_resolution(
     conn: duckdb.DuckDBPyConnection,
     *,
@@ -388,19 +398,17 @@ def apply_manual_resolution(
     field_name: str,
     canonical_value: str | None,
     reason: str,
-    table_name: str = "characters",
+    table_name: str | None = None,
 ) -> bool:
     """Resolve an open dispute manually. Returns False if no open dispute found."""
-    row = conn.execute(
-        f"""
-        SELECT "dispute_id"
-        FROM "{FACT_DISPUTES_TABLE}"
-        WHERE "table_name" = ? AND "entity_key" = ? AND "field_name" = ?
-          AND "status" = ?
-        """,
-        [table_name, entity_key, field_name, DISPUTE_STATUS_OPEN],
-    ).fetchone()
-    if row is None:
+    table_name = find_dispute_table(
+        conn,
+        entity_key=entity_key,
+        field_name=field_name,
+        table_name=table_name,
+        open_only=True,
+    )
+    if table_name is None:
         return False
     apply_field_resolution(
         conn,
@@ -415,7 +423,7 @@ def apply_manual_resolution(
 
 
 def count_open_disputes(conn: duckdb.DuckDBPyConnection) -> int:
-    if not _table_exists(conn, FACT_DISPUTES_TABLE):
+    if not table_exists(conn, FACT_DISPUTES_TABLE):
         return 0
     return int(
         conn.execute(
@@ -426,7 +434,7 @@ def count_open_disputes(conn: duckdb.DuckDBPyConnection) -> int:
 
 
 def count_open_claims(conn: duckdb.DuckDBPyConnection) -> int:
-    if not _table_exists(conn, FACT_CLAIMS_TABLE):
+    if not table_exists(conn, FACT_CLAIMS_TABLE):
         return 0
     return int(
         conn.execute(
@@ -439,18 +447,3 @@ def count_open_claims(conn: duckdb.DuckDBPyConnection) -> int:
             [DISPUTE_STATUS_OPEN],
         ).fetchone()[0]
     )
-
-
-def count_unresolved_conflicts(conn: duckdb.DuckDBPyConnection) -> int:
-    """Backward-compatible alias: returns open claim count."""
-    return count_open_claims(conn)
-
-
-def _table_exists(conn: duckdb.DuckDBPyConnection, table_name: str) -> bool:
-    row = conn.execute(
-        """
-        SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?
-        """,
-        [table_name],
-    ).fetchone()
-    return bool(row and row[0] > 0)
